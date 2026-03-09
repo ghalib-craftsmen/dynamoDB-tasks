@@ -61,3 +61,32 @@ All three patterns resolve within a single partition — no GSI needed. Pattern 
 - `TEAM#` — namespace for team partitions
 - `METADATA` — fixed SK for the team detail item (name, description, etc.)
 - `MEMBER#` — SK prefix for membership items; embedding `user_id` makes membership checks a single `GetItem`
+
+---
+
+### Meal Participation
+
+## Access Patterns
+
+1. Get user's all meals for a date
+2. Get user's specific meal
+3. Opt in/out of a meal
+4. All participation for a date
+
+## DB Schema
+
+| Item               | PK          | SK                        | GSI1_PK       | GSI1_SK                      |
+| ------------------ | ----------- | ------------------------- | ------------- | ---------------------------- |
+| Meal Participation | `USER#<id>` | `MEAL#<date>#<meal_type>` | `DATE#<date>` | `MEAL#<meal_type>#<user_id>` |
+
+```
+PK: USER#<id>   SK: MEAL#<date>#<meal_type>
+GSI1_PK: DATE#<date>   GSI1_SK: MEAL#<meal_type>#<user_id>
+```
+
+Patterns 1–3 resolve from the main table. Pattern 1 uses `begins_with(SK, "MEAL#<date>")`. Pattern 2 is a direct `GetItem`. Pattern 3 is a `PutItem`. Pattern 4 queries **GSI1** with `GSI1_PK = DATE#<date>` to fan out across all users for that date.
+
+- `MEAL#` — SK prefix for meal participation items
+- `<date>#<meal_type>` — composite SK suffix; `<date>` is `YYYY-MM-DD`, `<meal_type>` is e.g. `BREAKFAST`, `LUNCH`, `DINNER`
+- `DATE#` — GSI1_PK namespace; groups all activity items for a given date across users
+- `MEAL#<meal_type>#<user_id>` — GSI1_SK; allows filtering by meal type within a date partition
