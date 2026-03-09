@@ -90,3 +90,31 @@ Patterns 1–3 resolve from the main table. Pattern 1 uses `begins_with(SK, "MEA
 - `<date>#<meal_type>` — composite SK suffix; `<date>` is `YYYY-MM-DD`, `<meal_type>` is e.g. `BREAKFAST`, `LUNCH`, `DINNER`
 - `DATE#` — GSI1_PK namespace; groups all activity items for a given date across users
 - `MEAL#<meal_type>#<user_id>` — GSI1_SK; allows filtering by meal type within a date partition
+
+---
+
+### Work Location
+
+## Access Patterns
+
+1. Get user's location for a date
+2. Set user's location
+3. All WFH employees on a date
+4. Monthly WFH count for a user
+
+## DB Schema
+
+| Item          | PK          | SK                    | GSI1_PK       | GSI1_SK        |
+| ------------- | ----------- | --------------------- | ------------- | -------------- |
+| Work Location | `USER#<id>` | `WORKLOCATION#<date>` | `DATE#<date>` | `WFH#<user_id>` |
+
+```
+PK: USER#<id>   SK: WORKLOCATION#<date>
+GSI1_PK: DATE#<date>   GSI1_SK: WFH#<user_id>
+```
+
+Patterns 1 and 2 are direct `GetItem` / `PutItem` on the main table. Pattern 4 uses `begins_with(SK, "WORKLOCATION#<year-month>")` on the main table — no GSI needed. Pattern 3 queries **GSI1** with `GSI1_PK = DATE#<date>` and `begins_with(GSI1_SK, "WFH#")` to list all WFH employees on a date, filtered away from meal rows sharing the same GSI partition.
+
+- `WORKLOCATION#` — SK prefix for work location items; `<date>` is `YYYY-MM-DD`
+- `DATE#` — same GSI1_PK namespace shared with Meal Participation; overloaded to cover all date-scoped fan-out queries with a single GSI
+- `WFH#` — GSI1_SK prefix for work location items; distinguishes them from `MEAL#` rows in the same GSI1 date partition
