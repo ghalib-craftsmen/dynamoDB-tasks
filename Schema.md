@@ -148,3 +148,27 @@ No GSI needed. All five patterns resolve within a single partition. Pattern 1 qu
 - `DAY#` — namespace for day partitions; `<date>` is `YYYY-MM-DD`
 - `METADATA` — SK for the day-type item (e.g., `OFFICE`, `WFH`, `HOLIDAY`)
 - `MEALS` — SK for the available-meals config item for that day
+
+---
+
+### WFH Period
+
+## Access Patterns
+
+1. List all WFH periods
+2. Is date in any WFH period?
+
+## DB Schema
+
+| Item       | PK          | SK                        |
+| ---------- | ----------- | ------------------------- |
+| WFH Period | `WFHPERIOD` | `<start_date>#<end_date>` |
+
+```
+PK: WFHPERIOD   SK: <start_date>#<end_date>
+```
+
+No GSI needed. All WFH periods share a singleton partition. Pattern 1 queries `PK = WFHPERIOD` to return all periods sorted chronologically. Pattern 2 queries up to today's date and filters `end_date >= target` in the application.
+
+- `WFHPERIOD` — fixed singleton PK; collocates all WFH period records in one partition for cheap full-list queries
+- `<start_date>#<end_date>` — composite SK in `YYYY-MM-DD#YYYY-MM-DD` format; ISO-8601 ensures natural chronological sort by start date
