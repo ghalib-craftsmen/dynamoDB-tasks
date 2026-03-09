@@ -5,6 +5,24 @@
 
 ---
 
+## Summary
+
+This schema uses a **single-table design** to store all entities (Users, Teams, Meal Participation, Work Location, Day Config, WFH Periods, and Audit Logs) in one DynamoDB table. This approach reduces operational overhead, minimizes costs, and enables transactional operations across entity types.
+
+**Single-Table Benefits:**
+- All related data in one table enables efficient queries and transactions
+- Reduced cost compared to multiple tables (fewer read/write capacity units)
+- Simplified operations and monitoring
+
+**GSI Usage:**
+- Only **1 GSI** (GSI1) is used, meeting the design goal of minimal index overhead
+- GSI1 is **overloaded** to serve three distinct access patterns: date-based meal participation queries, date-based WFH employee queries, and user-based audit log queries
+- GSI1 is **sparse** — only Meal Participation, Work Location (WFH only), and Audit Log items populate it
+- **KEYS_ONLY projection** minimizes storage costs; applications use BatchGetItem for full attributes when needed
+- Most access patterns (Users, Teams, Day Config, WFH Periods) require no GSI and resolve via direct GetItem or single-partition Query operations
+
+---
+
 ## Users
 
 ### Access Patterns
