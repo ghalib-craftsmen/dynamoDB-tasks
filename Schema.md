@@ -118,3 +118,33 @@ Patterns 1 and 2 are direct `GetItem` / `PutItem` on the main table. Pattern 4 u
 - `WORKLOCATION#` — SK prefix for work location items; `<date>` is `YYYY-MM-DD`
 - `DATE#` — same GSI1_PK namespace shared with Meal Participation; overloaded to cover all date-scoped fan-out queries with a single GSI
 - `WFH#` — GSI1_SK prefix for work location items; distinguishes them from `MEAL#` rows in the same GSI1 date partition
+
+---
+
+### Day & Meals
+
+## Access Patterns
+
+1. Get full day context (type + available meals)
+2. Get day type only
+3. Get available meals only
+4. Set day type
+5. Set available meals
+
+## DB Schema
+
+| Item       | PK           | SK         |
+| ---------- | ------------ | ---------- |
+| Day Config | `DAY#<date>` | `METADATA` |
+| Day Meals  | `DAY#<date>` | `MEALS`    |
+
+```
+PK: DAY#<date>   SK: METADATA
+PK: DAY#<date>   SK: MEALS
+```
+
+No GSI needed. All five patterns resolve within a single partition. Pattern 1 queries `PK = DAY#<date>` and returns both sibling items in one round-trip. Patterns 2–5 are point reads/writes.
+
+- `DAY#` — namespace for day partitions; `<date>` is `YYYY-MM-DD`
+- `METADATA` — SK for the day-type item (e.g., `OFFICE`, `WFH`, `HOLIDAY`)
+- `MEALS` — SK for the available-meals config item for that day
