@@ -1,18 +1,19 @@
 # DynamoDB Single-Table Schema
 
-**Table name:** `AppTable`
+**Table name:** `AppTable`    
+**GSIs used:** 1 (`GSI1` — `GSI1_PK` / `GSI1_SK`)
 
 ---
 
-### Users
+## Users
 
-## Access Patterns
+### Access Patterns
 
 1. Get user profile by user ID
 2. Login lookup by email → resolve to user ID
 3. Bot auth lookup by Discord ID → resolve to user ID
 
-## DB Schema
+### DB Schema
 
 | Item           | PK                      | SK        |
 | -------------- | ----------------------- | --------- |
@@ -36,15 +37,15 @@ All three patterns are direct `GetItem` calls — no GSI needed. Lookup items (E
 
 ---
 
-### Team
+## Team
 
-## Access Patterns
+### Access Patterns
 
 1. Get team details
 2. Get all members of a team
 3. Check if a specific user is in a team
 
-## DB Schema
+### DB Schema
 
 | Item          | PK          | SK                  |
 | ------------- | ----------- | ------------------- |
@@ -64,16 +65,16 @@ All three patterns resolve within a single partition — no GSI needed. Pattern 
 
 ---
 
-### Meal Participation
+## Meal Participation
 
-## Access Patterns
+### Access Patterns
 
 1. Get user's all meals for a date
 2. Get user's specific meal
 3. Opt in/out of a meal
 4. All participation for a date
 
-## DB Schema
+### DB Schema
 
 | Item               | PK          | SK                        | GSI1_PK       | GSI1_SK                      |
 | ------------------ | ----------- | ------------------------- | ------------- | ---------------------------- |
@@ -93,16 +94,16 @@ Patterns 1–3 resolve from the main table. Pattern 1 uses `begins_with(SK, "MEA
 
 ---
 
-### Work Location
+## Work Location
 
-## Access Patterns
+### Access Patterns
 
 1. Get user's location for a date
 2. Set user's location
 3. All WFH employees on a date
 4. Monthly WFH count for a user
 
-## DB Schema
+### DB Schema
 
 | Item          | PK          | SK                    | GSI1_PK       | GSI1_SK        |
 | ------------- | ----------- | --------------------- | ------------- | -------------- |
@@ -121,9 +122,9 @@ Patterns 1 and 2 are direct `GetItem` / `PutItem` on the main table. Pattern 4 u
 
 ---
 
-### Day & Meals
+## Day & Meals
 
-## Access Patterns
+### Access Patterns
 
 1. Get full day context (type + available meals)
 2. Get day type only
@@ -131,7 +132,7 @@ Patterns 1 and 2 are direct `GetItem` / `PutItem` on the main table. Pattern 4 u
 4. Set day type
 5. Set available meals
 
-## DB Schema
+### DB Schema
 
 | Item       | PK           | SK         |
 | ---------- | ------------ | ---------- |
@@ -151,14 +152,14 @@ No GSI needed. All five patterns resolve within a single partition. Pattern 1 qu
 
 ---
 
-### WFH Period
+## WFH Period
 
-## Access Patterns
+### Access Patterns
 
 1. List all WFH periods
 2. Is date in any WFH period?
 
-## DB Schema
+### DB Schema
 
 | Item       | PK          | SK                        |
 | ---------- | ----------- | ------------------------- |
@@ -172,3 +173,44 @@ No GSI needed. All WFH periods share a singleton partition. Pattern 1 queries `P
 
 - `WFHPERIOD` — fixed singleton PK; collocates all WFH period records in one partition for cheap full-list queries
 - `<start_date>#<end_date>` — composite SK in `YYYY-MM-DD#YYYY-MM-DD` format; ISO-8601 ensures natural chronological sort by start date
+
+---
+
+## Audit Log
+
+### Access Patterns
+
+1. Write an audit entry on every mutation
+2. Get all changes made by a specific user
+3. Get all changes made to a specific user's records
+4. Get changes of a specific entity type by a user
+
+### DB Schema
+
+| Item        | PK                                 | SK                            | GSI1_PK                | GSI1_SK                           |
+| ----------- | ---------------------------------- | ----------------------------- | ---------------------- | --------------------------------- |
+| Audit Entry | `AUDIT#<entity_type>#<entity_id>`  | `<timestamp>#<actor_user_id>` | `USER#<actor_user_id>` | `AUDIT#<entity_type>#<timestamp>` |
+
+```
+PK: AUDIT#<entity_type>#<entity_id>   SK: <timestamp>#<actor_user_id>
+GSI1_PK: USER#<actor_user_id>         GSI1_SK: AUDIT#<entity_type>#<timestamp>
+```
+
+Pattern 1 is a `PutItem`. Pattern 3 queries the main table with `PK = AUDIT#USER#<target_id>` — no GSI needed since `entity_type = USER` and `entity_id = <target_id>` are embedded in the PK. Patterns 2 and 4 query **GSI1**: pattern 2 uses `GSI1_PK = USER#<actor_user_id>` with `begins_with(GSI1_SK, "AUDIT#")`; pattern 4 narrows further with `begins_with(GSI1_SK, "AUDIT#<entity_type>#")`.
+
+- `AUDIT#` — PK namespace for audit entries; `<entity_type>#<entity_id>` collocates all history for one entity, sorted by time via SK
+- `<timestamp>` — ISO-8601 UTC (e.g. `2026-03-10T08:00:00Z`); leading the SK ensures chronological sort on the main table
+- `USER#` — GSI1_PK reuses the same namespace as user profile items; the GSI is sparse so only items that write `GSI1_PK` are indexed — user profile items do not write it, so there is no collision
+- `AUDIT#<entity_type>#` — GSI1_SK prefix enables filtering by entity type within a user's audit history
+
+---
+
+## GSI Summary
+
+| GSI  | GSI1_PK                | GSI1_SK                           | Patterns served                                      |
+| ---- | ---------------------- | --------------------------------- | ---------------------------------------------------- |
+| GSI1 | `DATE#<date>`          | `MEAL#<meal_type>#<user_id>`      | All meal participation for a date                    |
+| GSI1 | `DATE#<date>`          | `WFH#<user_id>`                   | All WFH employees on a date                          |
+| GSI1 | `USER#<actor_user_id>` | `AUDIT#<entity_type>#<timestamp>` | All changes by a user; by user + entity type         |
+
+> **GSI1 is overloaded** — different item types write different values into `GSI1_PK` / `GSI1_SK`, each occupying its own logical slice of the index with no cross-contamination. The GSI is sparse: only Meal Participation, Work Location, and Audit items project into it, keeping index size and cost minimal.
